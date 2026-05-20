@@ -1,3 +1,4 @@
+using Amazon.Runtime;
 using Amazon.SQS;
 using HannesCloud.SmartHomeProxy;
 using HannesCloud.SmartHomeProxy.Cloud;
@@ -21,6 +22,9 @@ builder.Services.Configure<HomeAssistantOptions>(
 
 builder.Services.Configure<CloudOptions>(
     builder.Configuration.GetSection("Cloud"));
+
+builder.Services.Configure<ServiceBusOptions>(
+    builder.Configuration.GetSection("ServiceBus"));
 
 // HA REST client
 builder.Services.AddHttpClient<HomeAssistantRestClient>((_, client) =>
@@ -46,12 +50,17 @@ else
     Log.Information("Cloud:BaseUrl not configured — running in log-only mode");
 }
 
+var serviceBus = builder.Configuration.GetSection("ServiceBus").Get<ServiceBusOptions>()!;
 builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<SetClimateTemperatureConsumer>();
     x.UsingAmazonSqs((context, cfg) =>
     {
-        cfg.Host("eu-central-1", h => h.Config(new AmazonSQSConfig()));
+        cfg.Host("eu-central-1", h =>
+        {
+            h.Config(new AmazonSQSConfig());
+            h.Credentials(new BasicAWSCredentials(serviceBus.AccessKey, serviceBus.AccessSecret));
+        });
         cfg.ConfigureEndpoints(context);
     });
 });
