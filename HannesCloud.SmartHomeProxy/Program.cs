@@ -1,6 +1,9 @@
+using Amazon.SQS;
 using HannesCloud.SmartHomeProxy;
 using HannesCloud.SmartHomeProxy.Cloud;
+using HannesCloud.SmartHomeProxy.Consumers;
 using HannesCloud.SmartHomeProxy.HomeAssistant;
+using MassTransit;
 using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -42,6 +45,16 @@ else
 {
     Log.Information("Cloud:BaseUrl not configured — running in log-only mode");
 }
+
+builder.Services.AddMassTransit(x =>
+{
+    x.AddConsumer<SetClimateTemperatureConsumer>();
+    x.UsingAmazonSqs((context, cfg) =>
+    {
+        cfg.Host("eu-central-1", h => h.Config(new AmazonSQSConfig()));
+        cfg.ConfigureEndpoints(context);
+    });
+});
 
 builder.Services.AddSingleton<HomeAssistantWebSocketClient>();
 builder.Services.AddHostedService<Worker>();

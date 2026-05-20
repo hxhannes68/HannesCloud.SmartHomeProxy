@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using HannesCloud.SmartHomeProxy.HomeAssistant.Models;
 using Microsoft.Extensions.Options;
@@ -27,5 +28,17 @@ public class HomeAssistantRestClient(HttpClient httpClient, IOptions<HomeAssista
 
         logger.LogInformation("Fetched {Count} entity states from HomeAssistant", states.Count);
         return states;
+    }
+
+    public async Task CallServiceAsync(string domain, string service, object data, CancellationToken ct = default)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/services/{domain}/{service}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.Value.AccessToken);
+        request.Content = JsonContent.Create(data);
+
+        var response = await httpClient.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+
+        logger.LogInformation("Called HA service {Domain}.{Service}", domain, service);
     }
 }
