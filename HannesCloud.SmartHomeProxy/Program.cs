@@ -54,12 +54,13 @@ var serviceBus = builder.Configuration.GetSection("ServiceBus").Get<ServiceBusOp
 builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<SetClimateTemperatureConsumer>();
+    x.AddConsumer<SetClimateHvacModeConsumer>();
     x.UsingAmazonSqs((context, cfg) =>
     {
         cfg.Host("eu-central-1", h =>
         {
-            h.Config(new AmazonSQSConfig());
-            h.Credentials(new BasicAWSCredentials(serviceBus.AccessKey, serviceBus.AccessSecret));
+            h.AccessKey(serviceBus.AccessKey);
+            h.SecretKey(serviceBus.AccessSecret);
         });
         cfg.ConfigureEndpoints(context);
     });
