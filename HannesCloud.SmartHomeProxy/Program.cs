@@ -55,6 +55,10 @@ builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<SetClimateTemperatureConsumer>();
     x.AddConsumer<SetClimateHvacModeConsumer>();
+    x.AddConsumer<OpenCoverConsumer>();
+    x.AddConsumer<CloseCoverConsumer>();
+    x.AddConsumer<StopCoverConsumer>();
+    x.AddConsumer<SetCoverPositionConsumer>();
     x.UsingAmazonSqs((context, cfg) =>
     {
         cfg.Host("eu-central-1", h =>
