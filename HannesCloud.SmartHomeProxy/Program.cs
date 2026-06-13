@@ -55,6 +55,8 @@ builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<SetClimateTemperatureConsumer>();
     x.AddConsumer<SetClimateHvacModeConsumer>();
+    x.AddConsumer<TurnOnLightConsumer>();
+    x.AddConsumer<TurnOffLightConsumer>();
     x.AddConsumer<OpenCoverConsumer>();
     x.AddConsumer<CloseCoverConsumer>();
     x.AddConsumer<StopCoverConsumer>();
