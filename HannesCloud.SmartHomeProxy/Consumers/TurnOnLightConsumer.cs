@@ -14,12 +14,11 @@ public class TurnOnLightConsumer(
         var msg = context.Message;
         logger.LogInformation("Turning on light {EntityId} (brightness={Brightness})", msg.EntityId, msg.Brightness);
 
-        await restClient.CallServiceAsync("light", "turn_on", new
-        {
-            entity_id = msg.EntityId,
-            brightness = msg.Brightness,
-            rgb_color = msg.RgbColor,
-            color_temp = msg.ColorTemp,
-        }, context.CancellationToken);
+        var data = new Dictionary<string, object> { ["entity_id"] = msg.EntityId };
+        if (msg.Brightness is not null) data["brightness"]  = msg.Brightness;
+        if (msg.RgbColor  is not null) data["rgb_color"]   = msg.RgbColor;
+        if (msg.ColorTemp is not null) data["color_temp"]  = msg.ColorTemp;
+
+        await restClient.CallServiceAsync("light", "turn_on", data, context.CancellationToken);
     }
 }
