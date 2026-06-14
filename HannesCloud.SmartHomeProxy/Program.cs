@@ -1,10 +1,9 @@
-using Amazon.Runtime;
-using Amazon.SQS;
 using HannesCloud.SmartHomeProxy;
 using HannesCloud.SmartHomeProxy.Cloud;
 using HannesCloud.SmartHomeProxy.Consumers;
 using HannesCloud.SmartHomeProxy.HomeAssistant;
 using MassTransit;
+using MassTransit.AmazonSqsTransport;
 using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -68,6 +67,7 @@ builder.Services.AddMassTransit(x =>
             h.AccessKey(serviceBus.AccessKey);
             h.SecretKey(serviceBus.AccessSecret);
         });
+        cfg.WaitTimeSeconds = serviceBus.WaitTimeSeconds;
         cfg.ConfigureEndpoints(context);
     });
 });
