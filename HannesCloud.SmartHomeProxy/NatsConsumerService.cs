@@ -33,6 +33,32 @@ public class NatsConsumerService(
         var streamName = $"smarthome_{userToken}";
         var handlers = BuildHandlers(userToken);
 
+        // NATS runs on the other side of a Tailscale hop from here. A host crash on a
+        // BackgroundService takes the whole process down (Worker, the HA websocket,
+        // everything) by default — losing the tailnet route for a minute must not cost
+        // us Home Assistant connectivity too, so a broken connection is retried here
+        // rather than allowed to propagate.
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await RunAsync(streamName, handlers, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "NATS connection lost, retrying in 15s");
+                await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
+            }
+        }
+    }
+
+    private async Task RunAsync(string streamName, Dictionary<string, Func<string, CancellationToken, Task>> handlers,
+        CancellationToken stoppingToken)
+    {
         await using var connection = new NatsConnection(new NatsOpts
         {
             Url = natsOptions.Value.Url,
@@ -54,6 +80,8 @@ public class NatsConsumerService(
                 Backoff = [TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2)]
             }, stoppingToken);
 
+        logger.LogInformation("Connected to NATS, consuming {Stream}", streamName);
+
         await foreach (var msg in consumer.ConsumeAsync<JsonElement>(cancellationToken: stoppingToken))
         {
             try
@@ -69,7 +97,7 @@ public class NatsConsumerService(
 
                 await msg.AckAsync(cancellationToken: stoppingToken);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "Failed handling message on {Subject}", msg.Subject);
                 await msg.NakAsync(cancellationToken: stoppingToken);
