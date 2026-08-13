@@ -1,9 +1,6 @@
 using HannesCloud.SmartHomeProxy;
 using HannesCloud.SmartHomeProxy.Cloud;
-using HannesCloud.SmartHomeProxy.Consumers;
 using HannesCloud.SmartHomeProxy.HomeAssistant;
-using MassTransit;
-using MassTransit.AmazonSqsTransport;
 using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -22,8 +19,8 @@ builder.Services.Configure<HomeAssistantOptions>(
 builder.Services.Configure<CloudOptions>(
     builder.Configuration.GetSection("Cloud"));
 
-builder.Services.Configure<ServiceBusOptions>(
-    builder.Configuration.GetSection("ServiceBus"));
+builder.Services.Configure<NatsOptions>(
+    builder.Configuration.GetSection("Nats"));
 
 // HA REST client
 builder.Services.AddHttpClient<HomeAssistantRestClient>((_, client) =>
@@ -49,28 +46,7 @@ else
     Log.Information("Cloud:BaseUrl not configured — running in log-only mode");
 }
 
-var serviceBus = builder.Configuration.GetSection("ServiceBus").Get<ServiceBusOptions>()!;
-builder.Services.AddMassTransit(x =>
-{
-    x.AddConsumer<SetClimateTemperatureConsumer>();
-    x.AddConsumer<SetClimateHvacModeConsumer>();
-    x.AddConsumer<TurnOnLightConsumer>();
-    x.AddConsumer<TurnOffLightConsumer>();
-    x.AddConsumer<OpenCoverConsumer>();
-    x.AddConsumer<CloseCoverConsumer>();
-    x.AddConsumer<StopCoverConsumer>();
-    x.AddConsumer<SetCoverPositionConsumer>();
-    x.UsingAmazonSqs((context, cfg) =>
-    {
-        cfg.Host("eu-central-1", h =>
-        {
-            h.AccessKey(serviceBus.AccessKey);
-            h.SecretKey(serviceBus.AccessSecret);
-        });
-        cfg.WaitTimeSeconds = serviceBus.WaitTimeSeconds;
-        cfg.ConfigureEndpoints(context);
-    });
-});
+builder.Services.AddHostedService<NatsConsumerService>();
 
 builder.Services.AddSingleton<HomeAssistantWebSocketClient>();
 builder.Services.AddHostedService<Worker>();
