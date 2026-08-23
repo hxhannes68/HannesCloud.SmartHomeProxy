@@ -11,8 +11,8 @@ using NATS.Client.Serializers.Json;
 namespace HannesCloud.SmartHomeProxy;
 
 /// <summary>
-/// Pulls the 8 light/cover/climate command messages off the household's own NATS
-/// stream and calls Home Assistant directly — replaces the 8 MassTransit/SQS
+/// Pulls the 10 light/cover/climate/switch command messages off the household's own NATS
+/// stream and calls Home Assistant directly — replaces the MassTransit/SQS
 /// consumers that used to do the same, one class each.
 ///
 /// One stream per household rather than one per message type: the backend's NATS
@@ -66,7 +66,10 @@ public class NatsConsumerService(
         });
         var jetStream = new NatsJSContext(connection);
 
-        await jetStream.CreateStreamAsync(new StreamConfig(streamName, handlers.Keys.ToArray())
+        // Create *or update*: the subject list is this class's handler table, so adding a
+        // message type changes the config of a stream that already exists. A plain create
+        // would fail with 10058 and take every other command down with it.
+        await jetStream.CreateOrUpdateStreamAsync(new StreamConfig(streamName, handlers.Keys.ToArray())
         {
             Retention = StreamConfigRetention.Workqueue
         }, stoppingToken);
@@ -150,6 +153,18 @@ public class NatsConsumerService(
                 var msg = JsonSerializer.Deserialize<TurnOffLightMessage>(json)!;
                 logger.LogInformation("Turning off light {EntityId}", msg.EntityId);
                 await restClient.CallServiceAsync("light", "turn_off", new { entity_id = msg.EntityId }, ct);
+            },
+            [SubjectFor<TurnOnSwitchMessage>(userToken)] = async (json, ct) =>
+            {
+                var msg = JsonSerializer.Deserialize<TurnOnSwitchMessage>(json)!;
+                logger.LogInformation("Turning on switch {EntityId}", msg.EntityId);
+                await restClient.CallServiceAsync("switch", "turn_on", new { entity_id = msg.EntityId }, ct);
+            },
+            [SubjectFor<TurnOffSwitchMessage>(userToken)] = async (json, ct) =>
+            {
+                var msg = JsonSerializer.Deserialize<TurnOffSwitchMessage>(json)!;
+                logger.LogInformation("Turning off switch {EntityId}", msg.EntityId);
+                await restClient.CallServiceAsync("switch", "turn_off", new { entity_id = msg.EntityId }, ct);
             },
             [SubjectFor<SetClimateTemperatureMessage>(userToken)] = async (json, ct) =>
             {
