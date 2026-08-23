@@ -11,8 +11,8 @@ using NATS.Client.Serializers.Json;
 namespace HannesCloud.SmartHomeProxy;
 
 /// <summary>
-/// Pulls the 8 light/cover/climate command messages off the household's own NATS
-/// stream and calls Home Assistant directly — replaces the 8 MassTransit/SQS
+/// Pulls the 10 light/cover/climate/switch command messages off the household's own NATS
+/// stream and calls Home Assistant directly — replaces the MassTransit/SQS
 /// consumers that used to do the same, one class each.
 ///
 /// One stream per household rather than one per message type: the backend's NATS
@@ -24,6 +24,7 @@ namespace HannesCloud.SmartHomeProxy;
 public class NatsConsumerService(
     IOptions<NatsOptions> natsOptions,
     IOptions<CloudOptions> cloudOptions,
+    IOptions<HomeAssistantOptions> homeAssistantOptions,
     HomeAssistantRestClient restClient,
     ILogger<NatsConsumerService> logger) : BackgroundService
 {
@@ -66,10 +67,7 @@ public class NatsConsumerService(
         });
         var jetStream = new NatsJSContext(connection);
 
-        await jetStream.CreateStreamAsync(new StreamConfig(streamName, handlers.Keys.ToArray())
-        {
-            Retention = StreamConfigRetention.Workqueue
-        }, stoppingToken);
+        await EnsureStreamAsync(jetStream, streamName, handlers.Keys, stoppingToken);
 
         var consumer = await jetStream.CreateOrUpdateConsumerAsync(streamName,
             new ConsumerConfig("smarthomeproxy")
@@ -102,6 +100,61 @@ public class NatsConsumerService(
                 logger.LogError(ex, "Failed handling message on {Subject}", msg.Subject);
                 await msg.NakAsync(cancellationToken: stoppingToken);
             }
+        }
+    }
+
+    /// <summary>
+    /// Create *or update*: the subject list is this class's handler table, so adding a
+    /// message type changes the config of a stream that already exists. A plain create
+    /// would fail with 10058 and take every other command down with it.
+    ///
+    /// The new subjects are unioned onto whatever the stream already carries rather than
+    /// replacing them, because an update is destructive in the other direction too: an
+    /// older build of this service — a rollback, or a second container that has not been
+    /// updated yet — has a shorter handler table, and a plain overwrite would drop the
+    /// subjects it does not know about while the backend is still publishing on them.
+    /// </summary>
+    private async Task EnsureStreamAsync(NatsJSContext jetStream, string streamName,
+        IEnumerable<string> subjects, CancellationToken ct)
+    {
+        var wanted = new HashSet<string>(subjects, StringComparer.Ordinal);
+        var carriedOver = (await ExistingSubjectsAsync(jetStream, streamName, ct))
+            .Where(existing => wanted.Add(existing))
+            .ToList();
+
+        if (carriedOver.Count > 0)
+            logger.LogWarning("Stream {Stream} carries {Count} subject(s) this build does not handle, " +
+                              "keeping them: {Subjects}", streamName, carriedOver.Count, carriedOver);
+
+        await jetStream.CreateOrUpdateStreamAsync(new StreamConfig(streamName, wanted.ToArray())
+        {
+            Retention = StreamConfigRetention.Workqueue
+        }, ct);
+    }
+
+    /// <summary>
+    /// Best effort: reading the config needs $JS.API.STREAM.INFO on the household stream,
+    /// which the broker may not grant. Failing to read it is not worth taking the service
+    /// down for — fall back to the handler table alone, which is what we would have sent
+    /// anyway before this became a union.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> ExistingSubjectsAsync(NatsJSContext jetStream, string streamName,
+        CancellationToken ct)
+    {
+        try
+        {
+            var stream = await jetStream.GetStreamAsync(streamName, cancellationToken: ct);
+            return stream.Info.Config.Subjects?.ToList() ?? [];
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Could not read the existing config of {Stream}, using the handler table as-is",
+                streamName);
+            return [];
         }
     }
 
@@ -151,6 +204,20 @@ public class NatsConsumerService(
                 logger.LogInformation("Turning off light {EntityId}", msg.EntityId);
                 await restClient.CallServiceAsync("light", "turn_off", new { entity_id = msg.EntityId }, ct);
             },
+            [SubjectFor<TurnOnSwitchMessage>(userToken)] = async (json, ct) =>
+            {
+                var msg = JsonSerializer.Deserialize<TurnOnSwitchMessage>(json)!;
+                if (!IsControllable(msg.EntityId)) return;
+                logger.LogInformation("Turning on switch {EntityId}", msg.EntityId);
+                await restClient.CallServiceAsync("switch", "turn_on", new { entity_id = msg.EntityId }, ct);
+            },
+            [SubjectFor<TurnOffSwitchMessage>(userToken)] = async (json, ct) =>
+            {
+                var msg = JsonSerializer.Deserialize<TurnOffSwitchMessage>(json)!;
+                if (!IsControllable(msg.EntityId)) return;
+                logger.LogInformation("Turning off switch {EntityId}", msg.EntityId);
+                await restClient.CallServiceAsync("switch", "turn_off", new { entity_id = msg.EntityId }, ct);
+            },
             [SubjectFor<SetClimateTemperatureMessage>(userToken)] = async (json, ct) =>
             {
                 var msg = JsonSerializer.Deserialize<SetClimateTemperatureMessage>(json)!;
@@ -166,6 +233,22 @@ public class NatsConsumerService(
                     new { entity_id = msg.EntityId, hvac_mode = msg.HvacMode }, ct);
             }
         };
+
+    /// <summary>
+    /// The entity filter decides what this household exposes to the cloud, and the switch
+    /// domain holds more than the plugs — Home Assistant's own automation toggles live
+    /// there too. Listing already skips them; the command path is the side that actually
+    /// reaches the house, so it checks the same filter before spending the long-lived HA
+    /// token on an entity id that arrived over the wire.
+    /// </summary>
+    private bool IsControllable(string entityId)
+    {
+        if (homeAssistantOptions.Value.EntityFilter.Matches(entityId))
+            return true;
+
+        logger.LogWarning("Refusing switch command for {EntityId}: outside the entity filter", entityId);
+        return false;
+    }
 
     private static string SubjectFor<T>(string userToken) =>
         $"{typeof(T).FullName!.ToLowerInvariant()}.{userToken}";
