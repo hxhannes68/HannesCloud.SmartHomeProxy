@@ -14,13 +14,14 @@ public class EntityFilterOptions
     public List<string> AllowedEntityIdPrefixes { get; set; } = [];
 
     /// <summary>
-    /// Matches on the tail of the entity id. Tasmota's energy entities are named after
-    /// the device and then suffixed — sensor.waschmaschine_energy_power,
-    /// sensor.trockner_energy_power — so a single "_energy_power" entry covers every
-    /// plug regardless of what each one is called, where a prefix would need one entry
-    /// per device.
+    /// Entity ids with a single "*" standing for the device part. Tasmota puts the device
+    /// name in the middle of its energy entities — sensor.steckdose_waschmaschine_energy_power,
+    /// sensor.steckdose_trockner_energy_power — so "sensor.steckdose_*_energy_power" covers
+    /// every plug regardless of what each one is called, where a plain prefix would need one
+    /// entry per device and a plain suffix would let through anything else that happens to
+    /// end in _energy_power (a utility_meter helper, a PV inverter) from any domain.
     /// </summary>
-    public List<string> AllowedEntityIdSuffixes { get; set; } = [];
+    public List<string> AllowedEntityIdPatterns { get; set; } = [];
 
     public bool Matches(string entityId)
     {
@@ -33,17 +34,33 @@ public class EntityFilterOptions
                 entityId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
             return true;
 
-        // Suffix match
-        if (AllowedEntityIdSuffixes.Any(suffix =>
-                entityId.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)))
+        // Wildcard match
+        if (AllowedEntityIdPatterns.Any(pattern => MatchesPattern(entityId, pattern)))
             return true;
 
         // An empty filter forwards everything
         if (AllowedDomains.Count == 0 && AllowedEntityIds.Count == 0
-            && AllowedEntityIdPrefixes.Count == 0 && AllowedEntityIdSuffixes.Count == 0)
+            && AllowedEntityIdPrefixes.Count == 0 && AllowedEntityIdPatterns.Count == 0)
             return true;
 
         var domain = entityId.Contains('.') ? entityId[..entityId.IndexOf('.')] : entityId;
         return AllowedDomains.Contains(domain, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool MatchesPattern(string entityId, string pattern)
+    {
+        var star = pattern.IndexOf('*');
+        if (star < 0)
+            return entityId.Equals(pattern, StringComparison.OrdinalIgnoreCase);
+
+        var prefix = pattern[..star];
+        var suffix = pattern[(star + 1)..];
+
+        // Both halves have to fit without overlapping, or "a*a" would match "a".
+        if (entityId.Length < prefix.Length + suffix.Length)
+            return false;
+
+        return entityId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+               && entityId.EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
     }
 }
