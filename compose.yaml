@@ -1,0 +1,19 @@
+# SmartHomeProxy on the Mac mini at home:
+#
+#   docker compose up -d --build
+#
+# Everything secret, and everything that differs per home, comes from secrets.env beside this
+# file (see secrets.env.example); appsettings.json in the repository holds none of it.
+services:
+  hannescloud.smarthomeproxy:
+    build:
+      context: .
+      dockerfile: HannesCloud.SmartHomeProxy/Dockerfile
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Berlin
+    env_file:
+      - secrets.env
+    volumes:
+      # Serilog's rolling files, kept across rebuilds.
+      - ./logs:/app/logs
