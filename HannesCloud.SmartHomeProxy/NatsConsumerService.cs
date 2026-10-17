@@ -84,6 +84,17 @@ public class NatsConsumerService(
         {
             try
             {
+                if (msg.Metadata is { } metadata
+                    && CommandFreshness.IsStale(msg.Subject!, metadata.Timestamp, DateTimeOffset.UtcNow))
+                {
+                    // Acked, not nak'd: redelivering a command that is already too old
+                    // would only make it older.
+                    logger.LogWarning("Dropping stale command on {Subject}, queued since {Since:u}",
+                        msg.Subject, metadata.Timestamp);
+                    await msg.AckAsync(cancellationToken: stoppingToken);
+                    continue;
+                }
+
                 if (handlers.TryGetValue(msg.Subject!, out var handle))
                 {
                     await handle(msg.Data.GetRawText(), stoppingToken);
@@ -128,7 +139,8 @@ public class NatsConsumerService(
 
         await jetStream.CreateOrUpdateStreamAsync(new StreamConfig(streamName, wanted.ToArray())
         {
-            Retention = StreamConfigRetention.Workqueue
+            Retention = StreamConfigRetention.Workqueue,
+            MaxAge = CommandFreshness.StreamMaxAge
         }, ct);
     }
 
