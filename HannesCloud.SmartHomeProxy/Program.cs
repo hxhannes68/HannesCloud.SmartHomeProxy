@@ -1,9 +1,12 @@
 using HannesCloud.SmartHomeProxy;
 using HannesCloud.SmartHomeProxy.Cloud;
 using HannesCloud.SmartHomeProxy.HomeAssistant;
+using HannesCloud.SmartHomeProxy.LocalSensors;
 using Serilog;
 
-var builder = Host.CreateApplicationBuilder(args);
+// A web host rather than a plain worker only for POST /local/states, which sensors on the
+// LAN (the Raspberry Pi) post their readings to.
+var builder = WebApplication.CreateBuilder(args);
 
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
@@ -21,6 +24,11 @@ builder.Services.Configure<CloudOptions>(
 
 builder.Services.Configure<NatsOptions>(
     builder.Configuration.GetSection("Nats"));
+
+builder.Services.Configure<LocalSensorOptions>(
+    builder.Configuration.GetSection("LocalSensors"));
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<LocalSensorThrottle>();
 
 // HA REST client
 builder.Services.AddHttpClient<HomeAssistantRestClient>((_, client) =>
@@ -54,8 +62,14 @@ builder.Services.AddHostedService<Worker>();
 try
 {
     Log.Information("Starting HannesCloud SmartHome Proxy");
-    var host = builder.Build();
-    await host.RunAsync();
+    var app = builder.Build();
+    app.MapLocalSensors();
+    if (string.IsNullOrEmpty(app.Configuration["LocalSensors:ApiKey"]))
+    {
+        Log.Warning("LocalSensors:ApiKey not configured — POST /local/states turns every request away");
+    }
+
+    await app.RunAsync();
 }
 catch (Exception ex)
 {

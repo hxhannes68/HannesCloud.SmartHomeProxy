@@ -1,0 +1,10 @@
+[Unit]
+Description=Send the BME280 reading every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

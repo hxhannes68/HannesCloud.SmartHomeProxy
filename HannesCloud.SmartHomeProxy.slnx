@@ -4,5 +4,6 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Project Path="HannesCloud.SmartHomeProxy.Tests/HannesCloud.SmartHomeProxy.Tests.csproj" />
   <Project Path="HannesCloud.SmartHomeProxy/HannesCloud.SmartHomeProxy.csproj" />
 </Solution>
