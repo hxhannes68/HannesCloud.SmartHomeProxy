@@ -1,9 +1,0 @@
-[Unit]
-Description=Send the BME280 reading to the SmartHome proxy
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=oneshot
-EnvironmentFile=/etc/pi-sensor.env
-ExecStart=/opt/pi-sensor/venv/bin/python /opt/pi-sensor/pi_sensor.py

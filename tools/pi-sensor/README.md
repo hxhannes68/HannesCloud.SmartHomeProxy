@@ -1,31 +1,31 @@
 # Pi sensor
 
-Sends temperature, humidity and air pressure of a BME280 on a Raspberry Pi to the SmartHome
-proxy every minute (`POST /local/states`). The proxy forwards them to the cloud, without Home
-Assistant. In the app they show up as `sensor.<DEVICE>_temperature`, `_humidity` and `_pressure`.
+`bme280.py` runs on the Raspberry Pi as `bme280.service`. Every two minutes it reads the BME280
+(I2C address 0x77), appends the reading to `bme280_data.jsonl`, and sends it to the SmartHome
+proxy (`POST /local/states`), which forwards it to the cloud without Home Assistant. In the app
+the readings show up as `sensor.<DEVICE>_temperature`, `_humidity` and `_pressure`.
 
-## Install on the Pi
+## Install / update on the Pi
 
 ```bash
-sudo raspi-config nonint do_i2c 0
-sudo mkdir -p /opt/pi-sensor
-sudo cp pi_sensor.py /opt/pi-sensor/
-sudo python3 -m venv /opt/pi-sensor/venv
-sudo /opt/pi-sensor/venv/bin/pip install smbus2 RPi.bme280
-sudo cp pi-sensor.env.example /etc/pi-sensor.env
-sudo nano /etc/pi-sensor.env
-sudo cp pi-sensor.service pi-sensor.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now pi-sensor.timer
+scp bme280.py hannes@raspberrypi.local:~/Documents/bme280.py
+ssh hannes@raspberrypi.local sudo systemctl restart bme280.service
 ```
+
+First time only: `bme280.service` goes to `/etc/systemd/system/`, the adafruit libraries
+(`adafruit-circuitpython-bme280`) must be installed, and `/etc/pi-sensor.env` is created from
+`pi-sensor.env.example` with the API key from the proxy's `secrets.env`.
 
 ## Check
 
 ```bash
-sudo systemctl start pi-sensor.service && journalctl -u pi-sensor.service -n 5
+ssh hannes@raspberrypi.local journalctl -u bme280.service -n 5
 ```
+
+`Sent to proxy: 202 {"forwarded":3}` means it arrived; `Proxy answered 401` means the API key
+differs from the proxy's.
 
 ## Moving the Pi
 
-Change `ROOM` in `/etc/pi-sensor.env`. The next reading (within a minute) moves the sensor to
-that room in the app. If the room doesn't exist there yet, the app offers to create it.
+Change `ROOM` in `/etc/pi-sensor.env`. The next reading moves the sensor to that room in the
+app. If the room doesn't exist there yet, the app offers to create it.
