@@ -7,7 +7,8 @@ namespace HannesCloud.SmartHomeProxy.Cloud;
 
 public class SmartHomeCloudClient(HttpClient httpClient, Auth0TokenProvider tokenProvider, IOptions<CloudOptions> options, ILogger<SmartHomeCloudClient> logger)
 {
-    public async Task SendStatesAsync(IReadOnlyList<EntityState> states, CancellationToken ct = default)
+    /// <summary>Sends the states; false when the cloud turned them down.</summary>
+    public async Task<bool> SendStatesAsync(IReadOnlyList<EntityState> states, CancellationToken ct = default)
     {
         var token = await tokenProvider.GetTokenAsync(ct);
         httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -33,9 +34,10 @@ public class SmartHomeCloudClient(HttpClient httpClient, Auth0TokenProvider toke
         {
             var body = await response.Content.ReadAsStringAsync(ct);
             logger.LogWarning("Cloud ingest returned {StatusCode}: {Body}", (int)response.StatusCode, body);
-            return;
+            return false;
         }
 
         logger.LogDebug("Sent {Count} states to cloud", states.Count);
+        return true;
     }
 }

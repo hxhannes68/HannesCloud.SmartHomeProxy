@@ -1,0 +1,16 @@
+[Unit]
+Description=BME280 logger
+After=multi-user.target
+
+[Service]
+Type=notify
+User=hannes
+WorkingDirectory=/home/hannes/Documents
+ExecStart=/usr/bin/python3 -u /home/hannes/Documents/bme280.py
+Restart=always
+RestartSec=10
+# The script sends a heartbeat at least every 10 s; no heartbeat for 2 minutes = hang = restart
+WatchdogSec=120
+
+[Install]
+WantedBy=multi-user.target

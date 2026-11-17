@@ -5,13 +5,15 @@ using Microsoft.Extensions.Options;
 
 namespace HannesCloud.SmartHomeProxy;
 
+// The cloud client comes last with a default: it is only registered when Cloud:BaseUrl is set,
+// and without the default the container can't build the worker in log-only mode at all.
 public class Worker(
     HomeAssistantRestClient restClient,
     HomeAssistantWebSocketClient wsClient,
-    SmartHomeCloudClient? cloudClient,
     IOptions<HomeAssistantOptions> options,
     IOptions<CloudOptions> cloudOptions,
-    ILogger<Worker> logger) : BackgroundService
+    ILogger<Worker> logger,
+    SmartHomeCloudClient? cloudClient = null) : BackgroundService
 {
     private readonly bool _cloudEnabled = !string.IsNullOrEmpty(cloudOptions.Value.BaseUrl);
 

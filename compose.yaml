@@ -14,6 +14,10 @@ services:
       - TZ=Europe/Berlin
     env_file:
       - secrets.env
+    ports:
+      # POST /local/states for sensors on the LAN (the Raspberry Pi). 8080 is the port the
+      # aspnet image listens on; requests need the X-Api-Key from secrets.env.
+      - "8095:8080"
     volumes:
       # Serilog's rolling files, kept across rebuilds.
       - ./logs:/app/logs
